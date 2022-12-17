@@ -1,0 +1,104 @@
+# load packages
+library(viridis)
+library(reshape2)
+library(tidyverse)
+library(rsq)
+library(janitor)
+library(pheatmap)
+library(viridisLite)
+
+# read peak file
+data <- read.csv("C:/Users/Kirsty/Documents/Calgary/Metabolomics/2209/2211/final_analysis/filtered_cleaned_matrix_outliers_rm2.csv", sep=",", header=T)[,-1]
+
+# filter adult colonzied samples
+data <- data %>% filter(!grepl(c("xs"), sample))
+
+# generate metadata from sample names
+data <- data %>% separate(sample, into=c("site", "hyg" ,"age", "sex", "rep"), remove=F) 
+
+# data to long formatfor loops 
+all_data_long <- data %>% gather(metabolite, value, -sample, -site, -hyg, -age, -sex, -rep)
+
+# generate factor to loop over
+all_data_long_site <- all_data_long %>% unite(site_meta, "site", "metabolite")
+
+# code for loop
+test <- all_data_long_site
+test <- test %>% mutate(test, smp2 = paste(hyg, age, sex, rep, sep="_"))
+test <- select(test, c(value, smp2, site_meta))
+test <- spread(test, smp2, value)
+test <- t(test)
+test <- as.data.frame(row_to_names(test, 1))
+
+
+# remove those where 0's are >80%
+test <-  test %>% 
+  purrr::discard(~sum(is.na(.x))/length(.x)* 100 >=80)
+test <- test %>% replace(is.na(.), 0)
+
+# data wrangling
+test <- as.data.frame(t(test))
+test <- rownames_to_column(test) 
+colnames(test)[1] <- "site_meta"
+test <- melt(test, id.vars = "site_meta")
+test <- test %>% separate(site_meta, c("site", "metabolite"), sep="_", remove=F)
+test <- test %>% separate(variable, c("hyg", "age", "sex", "rep"), sep="_", remove=F)
+
+test <- filter(test, site_meta != "cec_Adenine|cec_Adenosine")
+
+rsq.outs <- data.frame();
+for (i in unique(test5$site_meta) ){
+    data_sub <- subset(test5,site_meta==i)
+    data_sub <- data_sub %>% mutate(across(where(is.numeric), scale))
+    lm <- lm(value ~ hyg + age + sex, data=data_sub)
+    rsq <- as.data.frame(rsq.partial(lm, adj=T))
+    rsq_adj <- rsq$adjustment
+    rsq_var <- rsq$variable
+    rsq_val <- rsq$partial.rsq
+    rsq.out <- data.frame(i, rsq_var, rsq_val)
+    rsq.outs <- rbind.data.frame(rsq.outs, rsq.out)
+}
+
+rsq.outs2 <- rsq.outs %>% separate(i, c("site", "meta"), sep="_")
+rsq.outs.wide <- rsq.outs2 %>% spread(meta, rsq_val)
+rsq.outs.wide <- rsq.outs.wide %>% mutate(rsq.outs.wide, site_var = paste(site, rsq_var))
+rsq.outs.wide <- rsq.outs.wide %>% select(-site, -rsq_var)
+rsq.outs.names <- rsq.outs.wide$site_var
+rownames(rsq.outs.wide) <- rsq.outs.names
+rsq.outs.wide <- rsq.outs.wide %>% select(-site_var)
+rsq.outs.wide <- as.data.frame(t(rsq.outs.wide))
+
+char_columns <- sapply(rsq.outs.wide, is.character)             # Identify character columns
+data_chars_as_num <- rsq.outs.wide                             # Replicate data
+data_chars_as_num[ , char_columns] <- as.data.frame(   # Recode characters as numeric
+  apply(data_chars_as_num[ , char_columns], 2, as.numeric))
+sapply(data_chars_as_num, class)
+
+colnames(data_chars_as_num)
+hm_data <- data_chars_as_num[, c(10,11,12,7,8,9,1,2,3,4,5,6,16,17,18,19,20,21,13,14,15, 22, 23, 24, 25, 26, 27)]
+
+hm <- pheatmap(mat=hm_data,
+         main = "Partial R2 by Factor at Each Site", 
+         #scale="row",
+         #border_colour = "white",
+         cluster_cols=F,
+         cluster_rows=F,
+         display_numbers = T,
+         gaps_col = c(3, 6, 9, 12, 15, 18, 21, 24),
+         color=inferno(8))
+hm
+
+# select rows where most variation is explained
+top_hm_data <- hm_data %>% mutate(total = rowSums(across(where(is.numeric)))) %>% top_n(n=20, total) %>% select(-total)
+
+
+hm <- pheatmap(mat=top_hm_data,
+         main = "Partial R2 by Factor at Each Site", 
+         #scale="row",
+         #border_colour = "white",
+         cluster_cols=F,
+         cluster_rows=T,
+         display_numbers = T,
+         gaps_col = c(3, 6, 9, 12, 15, 18, 21, 24),
+         color=inferno(8))
+hm
