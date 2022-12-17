@@ -47,8 +47,8 @@ test <- test %>% separate(variable, c("hyg", "age", "sex", "rep"), sep="_", remo
 test <- filter(test, site_meta != "cec_Adenine|cec_Adenosine")
 
 rsq.outs <- data.frame();
-for (i in unique(test5$site_meta) ){
-    data_sub <- subset(test5,site_meta==i)
+for (i in unique(test$site_meta) ){
+    data_sub <- subset(test,site_meta==i)
     data_sub <- data_sub %>% mutate(across(where(is.numeric), scale))
     lm <- lm(value ~ hyg + age + sex, data=data_sub)
     rsq <- as.data.frame(rsq.partial(lm, adj=T))
