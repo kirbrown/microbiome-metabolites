@@ -82,7 +82,6 @@ hm_data <- data_chars_as_num
 # generate heatmap for all metabolites
 hm_all <- pheatmap(mat=hm_data,
          main = "Partial R2 by Factor at Each Site", 
-         #scale="row",
          #border_colour = "white",
          cluster_cols=F,
          cluster_rows=F,
@@ -97,7 +96,6 @@ top_hm_data <- hm_data %>% mutate(total = rowSums(across(where(is.numeric)))) %>
 # generate heatmap for top 20 metabolites where most variation is explained by factors across all sites
 hm_top20 <- pheatmap(mat=top_hm_data,
          main = "Top 20 Metabolites: Partial R2 by Factor at Each Site", 
-         #scale="row",
          #border_colour = "white",
          cluster_cols=F,
          cluster_rows=T,
