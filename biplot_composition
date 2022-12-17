@@ -1,11 +1,18 @@
+# load packages
+library(viridis)
+library(reshape2)
+library(tidyverse)
+library(janitor)
+library(pheatmap)
+library(patchwork)
+
+# read data file
 data_meta <- read.csv("brown_peak_table.csv")[,-1]
 
-# read data
-data <- data_meta
+# filter adult colonized
+data <- data_meta %>% filter(!grepl(c("xs"), sample))
 
-data <- data %>% filter(!grepl(c("xs"), sample))
-
-
+# adjust sample names for plotting
 data$sample <- str_replace_all(data$sample, "_3_", "_03_")
 data$sample <- str_replace_all(data$sample, "_8_", "_08_")
 data$sample <- str_replace_all(data$sample, "jej", "ajej")
@@ -18,7 +25,7 @@ data <- data %>% column_to_rownames(var="sample")
 data[data==0] <- NA
 data <- log(data, 2)
 
-# generate site
+# generate site variable
 data <- data %>% rownames_to_column(var="site")
 
 # make long
@@ -27,35 +34,29 @@ data_l <- melt(data, id.vars = c("site"))
 # generate metadata
 data <- separate(data_l, site, into=c("site", "hyg", "age", "sex", "rep"), sep="_", remove=F)
 
-# fitler adult colonized mice
-data <- data %>% filter(hyg != "xsdm")
-data <- data %>% filter(hyg != "xspf")
-#data <- data %>% filter(hyg != "sdm")
-
-# generate variables for stats
+# generate factors for stats
 test <- data %>% unite(group_var, c("variable", "site"))
 test <- test %>% unite(sex_rep, c("hyg", "age", "sex", "rep"), remove=T)
 
 # generate wide data for stats
-plot2 <- test %>% spread(sex_rep, value) 
+plot <- test %>% spread(sex_rep, value) 
 
 # remove metabolites not present in 30% of samples
-plot3 <- plot2[!rowSums(is.na(plot2)) > ncol(plot2)*.3,]
-plot2 <- plot3
-#plot2 <- na.omit(plot2)
-# calculate means / group
+plot <- plot[!rowSums(is.na(plot)) > ncol(plot)*.3,]
 
+# calculate means / group
 gf <- apply(plot2[,grep("gf", colnames(plot2))], 1, mean, na.rm=T)
 spf <- apply(plot2[,grep("spf", colnames(plot2))], 1, mean, na.rm=T)
+
+# calculate fold change
 fold_change <- spf-gf
 fold_change <- as.data.frame(fold_change)
 group_var <- plot2$group_var
 
+# bind fold changes with group variables
 fold_change <- as.data.frame(cbind(group_var,fold_change))
 
-# calculate p-values
-#t.test(plot[1, 2:5], plot[1, 6:9])
-
+# t test function
 ttest <- function(df, grp1, grp2) {
   x = df[grp1]
   y = df[grp2]
@@ -65,15 +66,19 @@ ttest <- function(df, grp1, grp2) {
   results$p.value
 }
 
+# perform t-tests on each test factor
 rawpvalue <- apply(plot2, 1, ttest, grep("gf", colnames(plot2)), grep("spf", colnames(plot2)))
 group_var <- plot2$group_var
 
+#bing p values with group variables
 rawpvalue <- as.data.frame(cbind(group_var, rawpvalue))
 
-results <- full_join(fold_change, rawpvalue, by=c("group_var"), keep=T )
-
+# bind p-values with Log2FC
+results <- full_join(fold_change, rawpvalue, by=c("group_var"), keep=T)
+# make numeric
 results <- transform(results, pvals = as.numeric(rawpvalue))
 
+# wrangle data for plotting
 volcano2 = results %>%
   separate(group_var.x, into=c("variable", "site"), sep="_") %>%
   #unite(plot_var, c("age", "hyg"), remove=F ) %>%
@@ -82,51 +87,41 @@ volcano2 = results %>%
   mutate(neg_log10_pval = -1*log10(pvals)) %>%
   mutate(neg_log10_pval_plot = ifelse(neg_log10_pval > 4, 4, neg_log10_pval))
 
-
-#test2 <- volcano %>% filter(plot_var=="12_spf")
-#metabolite_count <- -log(0.1/length(unique(data$variable)),10)
+# define outliers for plotting (Adjusted p-value <- 0.05 or absolute Log2FC > 2.5
 outliers2 <- volcano2 %>% filter(neg_log10_pval > -log(0.05/length(unique(data$variable)),10) | abs(plot_fc) > 2.5)
 
-
-
+# generate volcano plot
 plot <- volcano2 %>%
-#  mutate(site2 = fct_relevel(site, "jej", "ile", "cec", "col", "pef", "ser", "liv", "spl", "uri")) %>%
   ggplot(aes(x=plot_fc2, y=neg_log10_pval)) +
   geom_point() +
- geom_text_repel(data=outliers2, aes(label=variable), size=2, colour="red", max.overlaps=Inf) +
+  geom_text_repel(data=outliers2, aes(label=variable), size=2, colour="red", max.overlaps=Inf) +
   geom_vline(xintercept = c(-2.5, 2.5), col="blue", linetype="dashed") +
   geom_hline(yintercept=2.67, col="blue", linetype="dashed")+
   facet_grid(~site) +
   xlab("Log2FC (SPF vs GF") +
   ylab("-log10 P Value") + 
-  ggtitle("Differential Metabolite Abundance based on Sex & Age - labels: -log10(Adj pVal > 0.3 | abs(fc) > 2.5") +
+  ggtitle("Differential Metabolite Abundance in SPF vs. GF mice. Labels: -log10(Adj pVal > 0.3 | abs(fc) > 2.5") +
   theme_bw()
-  
-  
-plot
+
 spf_vol <- plot
 
-
+# generate means for OMM12 and GF
 gf <- apply(plot2[,grep("gf", colnames(plot2))], 1, mean, na.rm=T)
-spf <- apply(plot2[,grep("sdm", colnames(plot2))], 1, mean, na.rm=T)
-fold_change <- spf-gf
+sdm <- apply(plot2[,grep("sdm", colnames(plot2))], 1, mean, na.rm=T)
+fold_change <- sdm-gf
 fold_change <- as.data.frame(fold_change)
 group_var <- plot2$group_var
 
 fold_change <- as.data.frame(cbind(group_var,fold_change))
-
-# calculate p-values
-#t.test(plot[1, 2:5], plot[1, 6:9])
-
+# run t-test
 rawpvalue <- apply(plot2, 1, ttest, grep("gf", colnames(plot2)), grep("sdm", colnames(plot2)))
 group_var <- plot2$group_var
 
 rawpvalue <- as.data.frame(cbind(group_var, rawpvalue))
-
 results <- full_join(fold_change, rawpvalue, by=c("group_var"), keep=T )
-
 results <- transform(results, pvals = as.numeric(rawpvalue))
 
+# wrangle results data for volcano plot
 volcano = results %>%
   separate(group_var.x, into=c("variable", "site"), sep="_") %>%
   #unite(plot_var, c("age", "hyg"), remove=F ) %>%
@@ -135,29 +130,21 @@ volcano = results %>%
   mutate(neg_log10_pval = -1*log10(pvals)) %>%
   mutate(neg_log10_pval_plot = ifelse(neg_log10_pval > 4, 4, neg_log10_pval))
 
-
-#test2 <- volcano %>% filter(plot_var=="12_spf")
-#metabolite_count <- -log(0.1/length(unique(data$variable)),10)
+# calculate outliers based on adjusted P-value < 0.05 or absolut Log2FC > 2.5
 outliers2 <- volcano %>% filter(neg_log10_pval > -log(0.05/length(unique(data$variable)),10) | abs(plot_fc) > 2.5)
 
-
-
 plot <- volcano %>%
-#  mutate(site2 = fct_relevel(site, "jej", "ile", "cec", "col", "pef", "ser", "liv", "spl", "uri")) %>%
   ggplot(aes(x=plot_fc2, y=neg_log10_pval)) +
   geom_point() +
- geom_text_repel(data=outliers2, aes(label=variable), size=2, colour="red", max.overlaps=Inf) +
+  geom_text_repel(data=outliers2, aes(label=variable), size=2, colour="red", max.overlaps=Inf) +
   geom_vline(xintercept = c(-2.5, 2.5), col="blue", linetype="dashed") +
   geom_hline(yintercept=2.67, col="blue", linetype="dashed")+
   facet_grid(~site) +
   xlab("Log2FC (SDM vs GF") +
   ylab("-log10 P Value") + 
-  ggtitle("Differential Metabolite Abundance based on Sex & Age - labels: -log10(Adj pVal > 0.3 | abs(fc) > 2.5") +
+  ggtitle("Differential Metabolite Abundance in OMM12 vs. GF: labels: -log10(Adj pVal > 0.3 | abs(fc) > 2.5") +
   theme_bw()
   
-  
-plot
-sdm_vol <- plot
-
+ sdm_vol <- plot
 
 sdm_vol + spf_vol + plot_layout(ncol=1)
