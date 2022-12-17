@@ -1,4 +1,4 @@
-data_meta <- read.csv("")[,-1]
+data_meta <- read.csv("brown_peak_table.csv")[,-1]
 
 # read data
 data <- data_meta
