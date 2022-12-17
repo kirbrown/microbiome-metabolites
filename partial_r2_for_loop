@@ -77,7 +77,7 @@ sapply(data_chars_as_num, class)
 colnames(data_chars_as_num)
 hm_data <- data_chars_as_num[, c(10,11,12,7,8,9,1,2,3,4,5,6,16,17,18,19,20,21,13,14,15, 22, 23, 24, 25, 26, 27)]
 
-hm <- pheatmap(mat=hm_data,
+hm_all <- pheatmap(mat=hm_data,
          main = "Partial R2 by Factor at Each Site", 
          #scale="row",
          #border_colour = "white",
@@ -86,14 +86,14 @@ hm <- pheatmap(mat=hm_data,
          display_numbers = T,
          gaps_col = c(3, 6, 9, 12, 15, 18, 21, 24),
          color=inferno(8))
-hm
+hm_all
 
 # select rows where most variation is explained
 top_hm_data <- hm_data %>% mutate(total = rowSums(across(where(is.numeric)))) %>% top_n(n=20, total) %>% select(-total)
 
 
-hm <- pheatmap(mat=top_hm_data,
-         main = "Partial R2 by Factor at Each Site", 
+hm_top20 <- pheatmap(mat=top_hm_data,
+         main = "Top 20 Metabolites: Partial R2 by Factor at Each Site", 
          #scale="row",
          #border_colour = "white",
          cluster_cols=F,
@@ -101,4 +101,4 @@ hm <- pheatmap(mat=top_hm_data,
          display_numbers = T,
          gaps_col = c(3, 6, 9, 12, 15, 18, 21, 24),
          color=inferno(8))
-hm
+hm_top20
