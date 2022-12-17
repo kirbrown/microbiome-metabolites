@@ -77,9 +77,7 @@ data_chars_as_num[ , char_columns] <- as.data.frame(
   apply(data_chars_as_num[ , char_columns], 2, as.numeric))
 sapply(data_chars_as_num, class)
 
-
-colnames(data_chars_as_num)
-hm_data <- data_chars_as_num[, c(10,11,12,7,8,9,1,2,3,4,5,6,16,17,18,19,20,21,13,14,15, 22, 23, 24, 25, 26, 27)]
+hm_data <- data_chars_as_num
 
 # generate heatmap for all metabolites
 hm_all <- pheatmap(mat=hm_data,
