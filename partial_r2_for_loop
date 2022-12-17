@@ -46,6 +46,7 @@ test <- test %>% separate(variable, c("hyg", "age", "sex", "rep"), sep="_", remo
 
 test <- filter(test, site_meta != "cec_Adenine|cec_Adenosine")
 
+# loop linear model and partial R2 over each factor
 rsq.outs <- data.frame();
 for (i in unique(test$site_meta) ){
     data_sub <- subset(test,site_meta==i)
@@ -59,6 +60,7 @@ for (i in unique(test$site_meta) ){
     rsq.outs <- rbind.data.frame(rsq.outs, rsq.out)
 }
 
+# wrangling data for heatmap
 rsq.outs2 <- rsq.outs %>% separate(i, c("site", "meta"), sep="_")
 rsq.outs.wide <- rsq.outs2 %>% spread(meta, rsq_val)
 rsq.outs.wide <- rsq.outs.wide %>% mutate(rsq.outs.wide, site_var = paste(site, rsq_var))
@@ -68,11 +70,13 @@ rownames(rsq.outs.wide) <- rsq.outs.names
 rsq.outs.wide <- rsq.outs.wide %>% select(-site_var)
 rsq.outs.wide <- as.data.frame(t(rsq.outs.wide))
 
-char_columns <- sapply(rsq.outs.wide, is.character)             # Identify character columns
-data_chars_as_num <- rsq.outs.wide                             # Replicate data
-data_chars_as_num[ , char_columns] <- as.data.frame(   # Recode characters as numeric
+# make numeric
+char_columns <- sapply(rsq.outs.wide, is.character)             
+data_chars_as_num <- rsq.outs.wide                             
+data_chars_as_num[ , char_columns] <- as.data.frame(   
   apply(data_chars_as_num[ , char_columns], 2, as.numeric))
 sapply(data_chars_as_num, class)
+
 
 colnames(data_chars_as_num)
 hm_data <- data_chars_as_num[, c(10,11,12,7,8,9,1,2,3,4,5,6,16,17,18,19,20,21,13,14,15, 22, 23, 24, 25, 26, 27)]
