@@ -8,7 +8,7 @@ library(pheatmap)
 library(viridisLite)
 
 # read peak file
-data <- read.csv("C:/Users/Kirsty/Documents/Calgary/Metabolomics/2209/2211/final_analysis/filtered_cleaned_matrix_outliers_rm2.csv", sep=",", header=T)[,-1]
+data <- read.csv("brown_peak_table.csv", sep=",", header=T)[,-1]
 
 # filter adult colonzied samples
 data <- data %>% filter(!grepl(c("xs"), sample))
