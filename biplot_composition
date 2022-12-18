@@ -146,5 +146,16 @@ plot <- volcano %>%
   theme_bw()
   
  sdm_vol <- plot
-
+# Generate Volcano plots
 sdm_vol + spf_vol + plot_layout(ncol=1)
+
+# select values for biplots & rename columns
+test_sdm <- volcano %>% select(pvals, group_var.y, fold_change)
+colnames(test_sdm) <- c("sdm_pval", "group_var", "sdm_fc")
+test_spf <- volcano2 %>% select(pvals, group_var.y, fold_change)
+colnames(test_spf) <- c("spf_pval", "group_var", "spf_fc")
+
+
+
+test <- full_join(test_sdm, test_spf)
+test <- test %>% separate(group_var, into = c("metabolite", "site"), sep="_")
