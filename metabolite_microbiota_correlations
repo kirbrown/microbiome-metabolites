@@ -1,0 +1,78 @@
+# load packages
+library(tidyverse)
+library(viridisLite)
+library(janitor)
+library(pheatmap)
+library(compositions)
+
+# prepare microbiota data
+microbe <- read.csv("brown_omm12_microbiota.csv")
+# remove 3 week old samples
+microbe <- microbe %>% filter(!grepl("_3_", smp)) 
+mic <- microbe %>% pivot_wider(names_from = site_spp, values_from=Abundance)
+# CLR transformation of bacterial abundance data
+mic <- as.data.frame(clr(mic))
+mic <- mic %>% column_to_rownames(var="smp")
+
+# prepare metabolite data
+metabolite <- read.csv("brown_peak_file.csv")[,-1]
+
+# remove 3 week old samples and select OMM12 colonized
+metabolite <- metabolite %>% filter(!grepl("_3_", sample)) 
+metabolite <- metabolite %>% filter(grepl("_sdm_", sample))
+metabolite <- remove_empty(metabolite, which = c("rows", "cols"), quiet = TRUE)
+
+# remove site from metabolite DF
+metabolite <- metabolite%>% select(-site)
+
+# pivot longer to generate site_metabolite variable
+metabolite_l <- metabolite %>% pivot_longer(!sample) 
+# generate site_metabolite variable
+metabolite_l <- metabolite_l %>% separate(sample, c("site", "smp"), sep="_s", remove=F) %>% select(-smp)
+metabolite_l <- metabolite_l %>% unite(site_meta, c(site, name), sep="_", remove=T)
+# remove site from sample names
+metabolite_l$sample <- str_remove(metabolite_l$sample, "cec_")
+metabolite_l$sample <- str_remove(metabolite_l$sample, "jej_")
+metabolite_l$sample <- str_remove(metabolite_l$sample, "ile_")
+metabolite_l$sample <- str_remove(metabolite_l$sample, "col_")
+
+# make wide for correlations
+meta <- metabolite_l %>% pivot_wider(names_from=site_meta, values_from=value)
+
+# move sample variable to rownames
+meta <- meta %>% column_to_rownames(var="sample")
+
+# remove metabolites where there are >30% NA
+meta <- as.data.frame(t(meta))
+meta <- meta3[!rowSums(is.na(meta)) > ncol(meta)*.3,]
+meta <- as.data.frame(t(meta))
+
+# scale data per metabolite
+meta <- as.data.frame(scale(meta))
+
+
+# perform correlation
+corr <- Hmisc::rcorr(as.matrix(mic), as.matrix(meta), type="spearman")
+
+# extract correlation coefficients
+coef <- as.data.frame(corr$r)
+
+# remove bact-bact and meta-meta correlation coefficients (microbiota samples have "bact" in name)
+coef <- coef %>% rownames_to_column(var="name") %>% filter(grepl("_bact", name)) %>% column_to_rownames(var="name")
+coef <- coef %>% select(-contains("bact"))
+
+# select 20 bacterial variables with the highest correlation values
+top20 <- coef %>% mutate(total = rowSums(abs(across(where(is.numeric))))) %>% top_n(n=20, total) %>% select(-total)
+
+# of highly correlated bacteria values select the 20 most correalted metabolite values
+top20 <- as.data.frame(t(top20))
+top20_met <- top20 %>% mutate(total = rowSums(abs(across(where(is.numeric))))) %>% top_n(n=20, total) %>% select(-total)
+
+
+# generate heatmap
+hm <- pheatmap(mat=top20_met,
+         main = "20 most correlated bacterial and metabolite variables", 
+         cluster_cols=T,
+         cluster_rows=T,
+         display_numbers = F,
+         color=inferno(8))
