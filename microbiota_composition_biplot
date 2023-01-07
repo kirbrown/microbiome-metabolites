@@ -159,3 +159,78 @@ colnames(test_spf) <- c("spf_pval", "group_var", "spf_fc")
 
 test <- full_join(test_sdm, test_spf)
 test <- test %>% separate(group_var, into = c("metabolite", "site"), sep="_")
+
+test_sdm <- volcano %>% select(pvals, group_var.y, fold_change)
+colnames(test_sdm) <- c("sdm_pval", "group_var", "sdm_fc")
+test_spf <- volcano2 %>% select(pvals, group_var.y, fold_change)
+colnames(test_spf) <- c("spf_pval", "group_var", "spf_fc")
+
+test <- full_join(test_sdm, test_spf)
+
+test2 <- test %>% separate(group_var, into = c("metabolite", "site"), sep="_")
+
+# fitler significant metabolites
+spf_sig <- volcano2 %>% filter(pvals < filter(pvals < (0.05/length(unique(volcano2$variable))))
+sdm_sig <- vocano %>% filter(pvals < filter(pvals < (0.05/length(unique(volcano2$variable))))
+
+# select top 25 most significant metabolites at each site in SPF vs GF
+o_cec_spf <- spf_sig %>% filter(site=="cec") %>% top_n(neg_log10_pval, n=25)
+o_col_spf <- spf_sig %>% filter(site=="col") %>%  top_n(neg_log10_pval, n=25)
+o_jej_spf <- spf_sig %>% filter(site=="ajej") %>% top_n(neg_log10_pval, n=25)
+o_ile_spf <- spf_sig %>% filter(site=="bile") %>% top_n(neg_log10_pval, n=25)
+o_pf_spf <- spf_sif %>% filter(site=="dpef")%>% top_n(neg_log10_pval, n=25)
+o_ser_spf <- spf_sig %>% filter(site=="eser")%>% top_n(neg_log10_pval, n=25)
+o_spl_spf <- spf_sig %>% filter(site=="spl")%>% top_n(neg_log10_pval, n=25)
+o_liv_spf <- spf_sig %>% filter(site=="liv") %>% top_n(neg_log10_pval, n=25)
+o_uri_spf <- spf_sig %>% filter(site=="uri") %>% top_n(neg_log10_pval, n=25)
+
+# select top 25 most significant metabolites at each site in SDM vs GF
+o_cec_sdm <- sdm_sig %>% filter(site=="cec")  %>% top_n(neg_log10_pval, n=25)
+o_col_sdm <- sdm_sig %>% filter(site=="col") %>%  top_n(neg_log10_pval, n=25)
+o_jej_sdm <- sdm_sig %>% filter(site=="ajej") %>% top_n(neg_log10_pval, n=25)
+o_ile_sdm <- sdm_sig %>% filter(site=="bile") %>% top_n(neg_log10_pval, n=25)
+o_pf_sdm <- sdm_sig %>% filter(site=="dpef")%>% top_n(neg_log10_pval, n=25)
+o_ser_sdm <- sdm_sig %>% filter(site=="eser") %>% top_n(neg_log10_pval, n=25)
+o_spl_sdm <- sdm_sig %>% filter(site=="spl")%>% top_n(neg_log10_pval, n=25)
+o_liv_sdm <- sdm_sig %>% filter(site=="liv")%>% top_n(neg_log10_pval, n=25)
+o_uri_sdm <- sdm_sig %>% filter(site=="uri") %>% top_n(neg_log10_pval, n=25)
+
+# bind outliers into 1 dataframe for Sdm and SPF                                                         
+outliers_spf <- rbind(o_jej_spf, o_ile_spf, o_cec_spf, o_col_spf, o_pf_spf, o_ser_spf, o_liv_spf, o_spl_spf, o_uri_spf)
+outliers_sdm <- rbind(o_jej_sdm, o_ile_sdm, o_cec_sdm, o_col_sdm, o_pf_sdm, o_ser_sdm, o_liv_sdm, o_spl_sdm, o_uri_sdm)
+
+# select variables of interest and rename columns
+spf <- outliers_spf %>% select(group_var.y, pvals, fold_change)
+colnames(spf) <- c("group_var", "spf_pval", "spf_fc")
+sdm <- outliers_sdm %>% select(group_var.y, pvals, fold_change)
+colnames(sdm) <- c("group_var", "sdm_pval", "sdm_fc")
+
+# combined outlier metabolites from SDM and SPF & wrangle
+outliers <- full_join(spf, sdm)
+outliers_name <- as.data.frame(outliers$group_var); colnames(outliers_name) <- "group_var"
+outliers <- left_join(outliers_name, test)
+outliers <- outliers %>% separate(group_var, into=c("metabolite", "site"), sep="_")
+
+# add variable to show where metabolites are significant in SPF or SDM vs GF
+outliers <- outliers %>% mutate(significant_in = case_when(
+  spf_pval < 0.05/length(unique(test2$metabolite)) & sdm_pval > 0.05/length(unique(test2$metabolite)) ~ "spf",
+  spf_pval > 0.05/length(unique(test2$metabolite)) & sdm_pval < 0.05/length(unique(test2$metabolite)) ~ "sdm",
+  spf_pval < 0.05/length(unique(test2$metabolite)) & sdm_pval < 0.05/length(unique(test2$metabolite)) ~ "spf_sdm"
+))
+
+# Generate biplot
+bivar <- outliers %>%
+  ggplot(mapping = aes(x=sdm_fc, y=spf_fc, label=metabolite, colour=significant_in)) +
+  geom_hline(yintercept=0, size=1, colour="grey") +
+  geom_vline(xintercept=0, size=1, colour="grey") +
+  geom_point() +
+  geom_text_repel(aes(label=metabolite), size=2, max.overlaps=Inf, colour="black") +
+  facet_wrap(~site, scales="free", ncol=5, drop=F) +
+  #scale_x_continuous(trans='log2') +
+  #scale_y_continuous(trans='log2') +
+  xlab("log2FC (OMM12 vs. GF)") +
+  ylab("log2FC (SPF vs. GF)") +
+  theme_bw() + 
+    geom_abline(intercept=0, slope=1, linetype="dashed")+
+  ggtitle("Differential Fold Change in SPF vs GF and OMM12 vs GF")
+bivar
