@@ -1,0 +1,150 @@
+# load packages
+library(tidyverse)
+library(reshape2)
+
+# read data
+data <- read.csv("brown_peak_file.csv")[,-1]
+
+# log2 transform data
+data <- data %>% column_to_rownames(var="sample")
+data[data==0] <- NA
+data <- log(data, 2)
+
+# generate site factor
+data <- data %>% rownames_to_column(var="site")
+
+# change factor names
+data$site <- str_replace_all(data$site, "jej", "ajej")
+data$site <- str_replace_all(data$site, "ile", "bile")
+data$site <- str_replace_all(data$site, "pef", "dpef")
+data$site <- str_replace_all(data$site, "ser", "eser")
+
+# make data long
+data_l <- melt(data, id.vars = c("site")) 
+
+# generate metadata from site factor
+data <- separate(data_l, site, into=c("site", "hyg", "age", "sex", "rep"), sep="_", remove=F)
+
+# fitler adult colonized mice
+data <- data %>% filter(hyg != "xsdm")
+data <- data %>% filter(hyg != "xspf")
+
+# filter 'sdm/omm12' colonized mice
+data <- data %>% filter(hyg != "sdm")
+
+# filter weanling mice
+data <- data %>% filter(age != "3")
+
+# generate variables for stats
+test <- data %>% unite(group_var, c("variable", "hyg", "site"))
+test <- test %>% unite(sex_rep, c("age", "sex", "rep"), remove=T)
+
+# generate wide data for stats
+plot <- test %>% spread(sex_rep, value) 
+
+# remove metabolites not present in 20% of samples
+plot <- plot[!rowSums(is.na(plot)) > ncol(plot)*.2,]
+
+# calculate means / group
+female <- apply(plot[,grep("F", colnames(plot))], 1, mean, na.rm=T)
+male <- apply(plot[,grep("M", colnames(plot))], 1, mean, na.rm=T)
+
+# calculate fold change
+fold_change <- male-female
+fold_change <- as.data.frame(fold_change)
+
+# rename with metabolite name
+group_var <- plot$group_var
+fold_change <- as.data.frame(cbind(group_var,fold_change))
+
+## calculate p-values
+# t-test function
+ttest <- function(df, grp1, grp2) {
+  x = df[grp1]
+  y = df[grp2]
+  x = as.numeric(x)
+  y = as.numeric(y)  
+  results = t.test(x, y, na.rm=T, var.equal=F)
+  results$p.value
+}
+
+# p-value calculations
+rawpvalue <- apply(plot, 1, ttest, grep("F", colnames(plot)), grep("M", colnames(plot)))
+
+group_var <- plot$group_var
+rawpvalue <- as.data.frame(cbind(group_var, rawpvalue))
+
+# combined fold change and t-test results
+results <- full_join(fold_change, rawpvalue, by=c("group_var"), keep=T )
+results <- transform(results, pvals = as.numeric(rawpvalue))
+
+# wrangle data for volcano plot
+volcano = results %>%
+  separate(group_var.x, into=c("variable", "hyg", "site"), sep="_") %>%
+  unite(plot_var, c("hyg"), remove=F ) %>%
+  mutate(plot_fc = ifelse(fold_change < -5, -5, fold_change)) %>%
+  mutate(plot_fc2 = ifelse(plot_fc > 5, 5, plot_fc)) %>%
+  mutate(neg_log10_pval = -1*log10(pvals)) %>%
+  mutate(neg_log10_pval_plot = ifelse(neg_log10_pval > 5, 5, neg_log10_pval))
+
+# generate list of metabolites to highlight
+highlight <- volcano %>% filter(neg_log10_pval > -log(0.5/length(unique(data$variable)), 10) | abs(plot_fc) > 2.5)
+
+plot <- volcano %>%
+  ggplot(aes(x=plot_fc2, y=neg_log10_pval_plot)) +
+  geom_point() +
+  geom_text_repel(data=highlight, aes(label=variable), size=3, colour="red",  max.overlaps=Inf) +
+  facet_grid(plot_var~site) +
+  xlab("Log2FC (M vs F") +
+  ylab("-log10 P Value") + 
+  ggtitle("Differential Metabolite Abundance based on Sex (All Ages): labels: PAdj < 0.05 | abs(fc) > 2.5") +
+  geom_vline(xintercept = c(-2.5, 2.5), col="blue", linetype="dashed") +
+  geom_hline(yintercept=3.45, col="blue", linetype="dashed")+
+  theme_bw()
+  
+plot
+
+# select data for bivar plot
+test <- volcano %>% select(pvals, group_var.y, fold_change)
+
+# generate metadata
+test <- test %>% separate(group_var.y, into = c("metabolite", "hyg", "site"), sep="_")
+
+# filter only GF and SPF metabolites
+test <- test %>% filter(hyg=="spf" | hyg=="gf")
+
+# wrangle data
+test <- test %>% unite(fc_pval, fold_change, pvals)
+test <- spread(test, hyg, fc_pval)
+test <- test %>% separate(gf, into=c("gf_fc", "gf_pval"), sep="_") %>% separate(spf, into=c("spf_fc", "spf_pval"), sep="_")
+test$gf_fc <- as.numeric(test$gf_fc)
+test$spf_fc <- as.numeric(test$spf_fc)
+test$gf_pval <- as.numeric(test$gf_pval)
+test$spf_pval <- as.numeric(test$spf_pval)
+
+# filter significant data
+test <- test %>% filter(gf_pval < 0.05/length(unique(data$variable)) | 
+                        spf_pval < 0.05/length(unique(data$variable)))
+                        
+test[test=="NA"] <- 0
+
+# generate variable to show if metabolites are significant in SPF or GF mice
+test <- test %>% mutate(significant_in = case_when(
+  spf_pval < 0.05/length(unique(data$variable)) & gf_pval < 0.05/length(unique(data$variable)) ~ "spf_gf",
+  spf_pval < 0.05/length(unique(data$variable)) & gf_pval >0.05/length(unique(data$variable)) ~ "spf",
+  gf_pval < 0.05/length(unique(data$variable)) & spf_pval > 0.05/length(unique(data$variable)) ~ "gf")) 
+
+# generate plot
+spf_bivar_age <- test %>%
+  ggplot(mapping = aes(x=gf_fc, y=spf_fc, label=metabolite, colour=significant_in)) +
+  geom_text_repel(colour="black")+
+  geom_hline(yintercept=0, size=1, colour="grey") +
+  geom_vline(xintercept=0, size=1, colour="grey") +
+  geom_point(size=2) +
+  facet_wrap(~site, scales="fixed", ncol=4, drop=F) +
+  xlab("GF log2FC (M vs. F)") +
+    geom_abline(intercept=0, slope=1, linetype="dashed")+
+  ylab("SPF log2FC (M vs. F)") +
+  theme_bw() + 
+  ggtitle("Ages Combined: Differential Fold Change in M & F Mice - Significant (PAdj <0.05) in either GF or SPF")
+spf_bivar_age
